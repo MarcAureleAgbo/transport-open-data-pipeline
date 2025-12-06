@@ -1,0 +1,20 @@
+# ✅ **.gitignore (recommandé pour ton projet Airflow)**
+
+# Python
+__pycache__/
+*.pyc
+
+# Airflow local
+logs/
+airflow.db
+airflow.cfg
+*.swp
+
+# Docker
+*.pid
+
+# OS
+.DS_Store
+
+# Credentials (si jamais)
+.env
