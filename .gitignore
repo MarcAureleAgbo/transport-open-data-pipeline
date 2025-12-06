@@ -1,20 +1,30 @@
-# ✅ **.gitignore (recommandé pour ton projet Airflow)**
-
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.sqlite3
 
-# Airflow local
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Airflow
 logs/
 airflow.db
 airflow.cfg
-*.swp
+unittests.cfg
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
 # Docker
 *.pid
 
-# OS
-.DS_Store
-
-# Credentials (si jamais)
+# Secrets (si un jour tu les ajoutes)
 .env
+*.env.local

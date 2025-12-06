@@ -1,93 +1,100 @@
-# 🚲 Projet Data Engineering — Pipeline Vélib (Airflow + Postgres)
+# 🚲 Pipeline Vélib — Projet Data Engineering (Airflow + Postgres)
 
-Ce projet met en place un pipeline ETL robuste permettant de collecter automatiquement 
-les données publiques des stations Vélib (localisation + disponibilité temps réel), 
-de les transformer et de les stocker dans une base Postgres pour permettre des analyses 
-de mobilité urbaine.
-
-Ce pipeline est orchestré avec **Apache Airflow** et s’exécute automatiquement 
-chaque jour (ou manuellement à la demande).
+Ce projet met en place un pipeline ETL complet pour collecter automatiquement
+les données publiques Vélib (stations + disponibilité temps réel), les transformer
+et les stocker dans une base PostgreSQL.  
+L’orchestration est gérée par **Apache Airflow** dans un environnement Docker.
 
 ---
 
-## 📌 Objectifs du projet
+## 🎯 Objectifs
 
-- Collecter les données Open Data Paris concernant :
-  - l’emplacement et les caractéristiques des stations Vélib
-  - la disponibilité en temps réel (vélos mécaniques, électriques, docks)
-- Nettoyer et fusionner ces données pour obtenir un snapshot complet par station.
-- Stocker ce snapshot dans une base **Postgres**.
-- Automatiser l’exécution quotidienne avec Airflow.
-- Produire une base prête pour :
-  - analyses statistiques
-  - visualisations
-  - machine learning
-  - études de mobilité urbaine
+- Récupérer les données open data Vélib depuis l’API de la Ville de Paris.
+- Combiner :
+  - les **métadonnées de station** (emplacement, capacité…)
+  - la **disponibilité en temps réel** (vélos, bornes libres, mécaniques/électriques).
+- Construire un **snapshot quotidien** de l’état du réseau Vélib.
+- Sauvegarder ce snapshot dans une table PostgreSQL pour :
+  - analyses de mobilité
+  - visualisations / dashboards
+  - futurs modèles prédictifs.
 
 ---
 
-## 🏗️ Architecture générale
+## 🏗️ Architecture
 
-Le projet repose sur :
+**Technologies principales :**
 
-🎛️ **Apache Airflow** — orchestration  
-🐘 **PostgreSQL** — stockage des données  
-🐳 **Docker / Docker Compose** — déploiement local  
-📡 **API Open Data Paris** — source des données Vélib  
-🐍 **Python 3.12** — transformations
+- Apache Airflow (orchestration)
+- Python 3.12
+- PostgreSQL
+- Docker & Docker Compose
+- API Open Data Paris
 
----
+**Schéma global :**
 
-## 🔄 Pipeline ETL (DAG Airflow)
+```text
+Open Data API → Airflow DAG → Postgres → (SQL / BI / ML)
+🔄 Le DAG velib_daily_pipeline
+Le pipeline comporte 3 tâches :
 
-Le DAG `velib_daily_pipeline` suit la structure ci-dessous :
+text
+Copy code
+extract_velib_data → transform_velib_data → load_velib_data
+1. extract_velib_data (EXTRACT)
+Appelle les endpoints JSON d’export :
 
-extract_velib_data
-↓
-transform_velib_data
-↓
-load_velib_data
+velib-emplacement-des-stations
 
+velib-disponibilite-en-temps-reel
 
-### 1️⃣ EXTRACT — `extract_velib_data`
-Récupération des données brutes depuis les endpoints Open Data Paris (format JSON) :
+Utilise requests.get(...) avec gestion des erreurs HTTP.
 
-- `velib-emplacement-des-stations`
-- `velib-disponibilite-en-temps-reel`
+Retourne les données brutes dans un dictionnaire :
 
-La tâche :
-- appelle les API
-- valide les statuts HTTP
-- charge les données JSON
-- retourne un dictionnaire `{stations, status}`
+python
+Copy code
+{
+    "stations": [...],
+    "status": [...]
+}
+2. transform_velib_data (TRANSFORM)
+Joint les deux jeux de données via stationcode.
 
-### 2️⃣ TRANSFORM — `transform_velib_data`
-Nettoyage et fusion :
+Extrait les champs pertinents :
 
-- association station ↔ disponibilité via `stationcode`
-- extraction des champs utiles
-- formatage d’un enregistrement par station
-- ajout d’un `snapshot_date` (date d'exécution)
+position (lat/lon)
 
-Retourne une liste propre, directement insérable.
+capacité
 
-### 3️⃣ LOAD — `load_velib_data`
-Chargement dans Postgres :
+nombre de vélos disponibles
 
-- création automatique de la table `velib_station_status` si nécessaire
-- insertion ligne par ligne
-- gestion des transactions (commit / rollback)
-- fermeture propre des connexions
+mécaniques / électriques
 
----
+statut de la station.
 
-## 🗄️ Structure de la table Postgres
+Ajoute un snapshot_date (date logique Airflow).
 
-```sql
+Retourne une liste de lignes prêtes à être insérées en base.
+
+3. load_velib_data (LOAD)
+Se connecte à PostgreSQL.
+
+Crée la table cible si elle n’existe pas :
+
+velib_station_status
+
+Insère les lignes transformées dans la table.
+
+Gère la transaction (commit / rollback) et les erreurs éventuelles.
+
+🗄️ Schéma de la table PostgreSQL
+sql
+Copy code
 CREATE TABLE velib_station_status (
     id SERIAL PRIMARY KEY,
     snapshot_date DATE NOT NULL,
-    stationcode VARCHAR(20),
+    stationcode VARCHAR(20) NOT NULL,
     name TEXT,
     capacity INTEGER,
     lon DOUBLE PRECISION,
@@ -100,44 +107,62 @@ CREATE TABLE velib_station_status (
     mechanical INTEGER,
     ebike INTEGER
 );
-
-🐳 Démarrer le projet avec Docker
-1. Lancer Airflow et Postgres
+🐳 Lancer le projet en local
+1. Démarrer l’environnement Docker
+bash
+Copy code
 docker compose up -d
+2. Accéder à l’interface Airflow
+URL : http://localhost:8080
 
+Utilisateur : airflow (à adapter selon la conf)
 
-Airflow sera accessible sur :
+Mot de passe : airflow
 
-👉 http://localhost:8080
+3. Exécuter le DAG
+Activer velib_daily_pipeline dans la liste des DAGs.
 
-user: airflow
-password: airflow
+Cliquer sur Trigger DAG pour lancer un run manuel.
 
-2. Vérifier la connexion à Postgres
-docker exec -it transport_postgres psql -U airflow -d airflow
+Vérifier que les 3 tâches passent au vert.
 
-▶️ Exécuter le pipeline
+4. Vérifier les données dans Postgres
+bash
+Copy code
+docker exec -it transport_postgres \
+  psql -U airflow -d airflow -c "SELECT COUNT(*) FROM velib_station_status;"
 
-Depuis linterface Airflow :
+docker exec -it transport_postgres \
+  psql -U airflow -d airflow -c "SELECT * FROM velib_station_status LIMIT 5;"
+📊 Exemples d’usages possibles
+Taux d’occupation moyen des stations par arrondissement.
 
-Aller dans DAGs
+Identification des stations saturées ou fréquemment vides.
 
-Activer velib_daily_pipeline
+Profil temporel d’utilisation (heures de pointe, saisonnalité).
 
-Cliquer sur Trigger DAG
+Préparation d’un dataset pour un modèle prédictif de disponibilité.
 
-Les données apparaîtront dans :
+🚀 Pistes d’amélioration
+Passage à une fréquence horaire ou infra-horaire.
 
-SELECT COUNT(*) FROM velib_station_status;
-SELECT * FROM velib_station_status LIMIT 10;
+Ajout d’un snapshot_timestamp (datetime complet).
 
-📁 Arborescence du projet
-transport-open-data-pipeline/
-│
-├── dags/
-│   └── velib_daily_pipeline.py
-│
-├── docker-compose.yml
-├── README.md
-├── .gitignore
-└── requirements.txt (optionnel)
+Création de vues matérialisées pour l’analyse.
+
+Intégration à un outil de BI (Metabase, Grafana).
+
+Export vers Parquet / Data Lake.
+
+👤 Auteur
+MAA
+Projet personnel Data Engineering — 2025
+
+sql
+Copy code
+
+👉 Une fois collé dans `README.md` :  
+```bash
+git add README.md
+git commit -m "Improve README with detailed project documentation"
+git push
